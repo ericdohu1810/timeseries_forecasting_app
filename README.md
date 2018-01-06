@@ -16,6 +16,8 @@ This Shiny App is a light-weight app to show the use of Prophet interactively to
 
 Packages used: 
 
+- `prophet`
+
 - `shiny` 
 
 - `shinycssloaders` 
