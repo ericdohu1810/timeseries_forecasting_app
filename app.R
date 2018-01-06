@@ -24,7 +24,7 @@ air_passengers <- data.frame(
 ui_app <- dashboardPage(
   skin = 'red',
   dashboardHeader(
-    title = "Time Series Forecaster", disable = TRUE
+    title = "Time Series Forecaster"
   ),
   dashboardSidebar(disable = T),
   dashboardBody(

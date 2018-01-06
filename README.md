@@ -32,5 +32,11 @@ Packages used:
 
 - `dplyr` 
 
+## Screen shots: 
+
+App on start up showing a raw time series: 
+
+<img src = "figure/time_series_forecaster_startup.png"> 
+
 
 -----
