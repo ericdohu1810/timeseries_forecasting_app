@@ -58,12 +58,12 @@ ui_app <- dashboardPage(
             fluidRow(
               column(
                 6,
-                dateInput('validate_from_date', label = "Validate From:", width = "100%",
+                dateInput('validate_from_date', label = "Validate From:", width = "100%", startview = 'year',
                           value = "1957-01-01", min = "1951-01-01", max = "1960-01-01")
               ),
               column(
                 6,
-                dateInput('forecast_until_date', label =  "Forecast Until:", width = "100%",
+                dateInput('forecast_until_date', label =  "Forecast Until:", width = "100%", startview = 'year',
                           value = "1970-12-01", min = "1961-06-01", max = "1999-12-01")
               )
             ),
@@ -98,10 +98,76 @@ server_app <- function(input, output, session) {
   
   # Build a model based on brush event 
   time_series_forecast <- reactive({
+    
+    # React specifically to the Prophesize button 
+    input$prophesize 
+    
+    # Return the baseline if it is the first time
+    if (input$prophesize == 0) {
+      return (list(
+        ts_viz = plot_ly(air_passengers, x = ~date, y = ~passengers_volume, type = 'scatter', mode = 'lines'),
+        train_error = "0%",
+        valid_error = "0%",
+        forecast_total = "0"
+      ))
+    }
+    
+    # Isolate the other inputs 
+    isolate({
+      changepoint_scale <- input$changepoint_scale
+      growth_type <- ifelse(input$growth_type == "Linear Growth", "linear", "logistic")
+      seasonality_scale <- input$seasonality_scale
+      yearly_seasonal <- input$yearly_seasonal
+      validate_from_date <- input$validate_from_date
+      forecast_until_date <- input$forecast_until_date
+    })
+    
+    # Build the datafarmes for training, validation
+    air_passengers_train <- air_passengers %>% 
+      filter(date < validate_from_date) %>% 
+      rename(ds = date, y = passengers_volume)
+    air_passengers_valid <- air_passengers %>% 
+      filter(date >= validate_from_date) %>% 
+      rename(ds = date, y = passengers_volume)
+    
+    # Make training fit 
+    pp_fit <- prophet(
+      df = air_passengers_train,
+      changepoint.prior.scale = changepoint_scale,
+      seasonality.prior.scale = seasonality_scale,
+      growth = growth_type,
+      yearly.seasonality = yearly_seasonal,
+      daily.seasonality = FALSE,
+      weekly.seasonality = FALSE
+    )
+    
+    # Make prediction on training set and validation set
+    pp_predict_train <- predict(pp_fit, air_passengers_train) %>% 
+      rename(date = ds, passengers_volume = yhat) %>% 
+      mutate(date = as.Date(date)) %>%
+      mutate(type = "Training Fit")
+    pp_predict_valid <- predict(pp_fit, air_passengers_valid) %>% 
+      rename(date = ds, passengers_volume = yhat) %>% 
+      mutate(date = as.Date(date)) %>%
+      mutate(type = "Validation Forecasts")
+    
+    # Combine them to make a long
+    results_pp_df <- air_passengers %>% 
+      mutate(type = "Actual Time Series") %>% 
+      bind_rows(pp_predict_train) %>% 
+      bind_rows(pp_predict_valid)
+    
+    # Now visualize it 
+    model_plot <- plot_ly(results_pp_df, x = ~date, y = ~passengers_volume, color = ~type,
+                          type = 'scatter', mode = 'lines')
+    train_error_mape <- round(mean(abs((air_passengers_train$y - pp_predict_train$passengers_volume) / air_passengers_train$y) * 100), 2)
+    valid_error_mape <- round(mean(abs((air_passengers_valid$y - pp_predict_valid$passengers_volume) / air_passengers_valid$y) * 100), 2)
+      
+    
     return (list(
-      ts_viz = plot_ly(air_passengers, x = ~date, y = ~passengers_volume, type = 'scatter', mode = 'lines'),
-      train_error = "0%",
-      test_error = "0%",
+      ts_viz = model_plot,
+      train_error = paste0(train_error_mape, "%"),
+      valid_error = paste0(valid_error_mape, "%"),
       forecast_total = "0"
     ))
   })
@@ -114,12 +180,12 @@ server_app <- function(input, output, session) {
   # Render the value boxes 
   output$training_error <- renderInfoBox({
     infoBox(
-      "Training Error", time_series_forecast()$train_error, icon = icon("cogs"), color = "red"
+      "Training Error (MAPE)", time_series_forecast()$train_error, icon = icon("cogs"), color = "red"
     )
   })
   output$testing_error <- renderInfoBox({
     infoBox(
-      "Testing Error", time_series_forecast()$test_error, icon = icon("check"), color = "green"
+      "Validation Error (MAPE)", time_series_forecast()$valid_error, icon = icon("check"), color = "green"
     )
   })
   output$forecast_total <- renderInfoBox({
